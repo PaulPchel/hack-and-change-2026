@@ -9,6 +9,8 @@
 import re
 import threading
 
+from tracing import Trace
+
 PHONE = re.compile(r"(?:\+7|8)[\s\-()]*\d{3}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}")
 _state = {}
 _lock = threading.Lock()
@@ -32,10 +34,16 @@ def _real(history):
 
     if not (solution.BASE_URL and solution.API_KEY):
         return None
-    client, retriever = _retriever(solution)
+    tr = Trace()
+    with tr.step("init_index", "загрузка базы и индекса (при первом запросе)"):
+        client, retriever = _retriever(solution)
     search_q = " ".join(m["content"] for m in history if m["role"] == "user")
-    found = retriever.search(search_q)
+    with tr.step("search") as s:
+        found = retriever.search(search_q)
+        s["note"] = f"BM25 + эмбеддинги, фрагментов: {len(found)}"
     context = "\n\n---\n\n".join(c[1] for c in found) or "(ничего не найдено)"
+    llm = tr.step("llm", solution.LLM_MODEL)
+    llm.__enter__()
     data = solution.post(
         client,
         "/chat/completions",
@@ -47,12 +55,13 @@ def _real(history):
             "temperature": solution.TEMPERATURE,
         },
     )
+    llm.__exit__(None, None, None)
     try:
         text = solution.clean(data["choices"][0]["message"]["content"])
     except (TypeError, KeyError, IndexError):
         text = ""
     sources = sorted({c[0] for c in found})
-    return {"text": text or solution.FALLBACK, "sources": sources, "lead": None}
+    return {"text": text or solution.FALLBACK, "sources": sources, "lead": None, "trace": tr.steps}
 
 
 def answer(history):
@@ -70,10 +79,12 @@ def answer(history):
                 "company": "ООО «Тест»",
                 "summary": "Клиент спрашивал: " + history[0]["content"][:200] + " (заглушка)",
             },
+            "trace": [{"step": "make_lead", "ms": 0, "note": "тестовая заявка (заглушка)"}],
         }
     return {
         "text": "Это ответ-заглушка: настоящий консультант пока не подключён. "
         "Вы написали: «" + last[:200] + "». Чтобы проверить заявку, отправьте тестовый номер, например +7 900 000 00 00.",
         "sources": ["00-reference/00-product-map.md (заглушка)"],
         "lead": None,
+        "trace": [{"step": "stub", "ms": 0, "note": "ответ-заглушка, поиск и модель не вызывались"}],
     }

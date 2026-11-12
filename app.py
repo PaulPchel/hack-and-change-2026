@@ -46,6 +46,25 @@ def _clean_lead(lead):
     return out if (out["name"] or out["phone"]) else None
 
 
+def _clean_trace(trace):
+    """Только безопасные короткие поля: имя шага, время, пометка."""
+    if not isinstance(trace, list):
+        return []
+    out = []
+    for t in trace[:20]:
+        if not isinstance(t, dict):
+            continue
+        ms = t.get("ms")
+        out.append(
+            {
+                "step": str(t.get("step") or "")[:40],
+                "ms": ms if isinstance(ms, int) and not isinstance(ms, bool) else None,
+                "note": str(t.get("note") or "")[:200],
+            }
+        )
+    return out
+
+
 @app.get("/")
 def index():
     return FileResponse(BASE / "static" / "index.html")
@@ -80,17 +99,18 @@ def chat(req: ChatRequest):
         res = consultant.answer(history)
     except Exception:
         log.exception("consultant failed")
-        res = {"text": ERROR_TEXT, "sources": [], "lead": None}
+        res = {"text": ERROR_TEXT, "sources": [], "lead": None, "trace": [{"step": "error", "ms": None, "note": "консультант вернул ошибку"}]}
     elapsed_ms = int((time.perf_counter() - started) * 1000)
 
     reply = str(res.get("text") or ERROR_TEXT)
     sources = [str(s) for s in (res.get("sources") or [])]
     lead = _clean_lead(res.get("lead"))
+    trace = _clean_trace(res.get("trace"))
 
-    db.add_message(sid, "assistant", reply, elapsed_ms, sources)
+    db.add_message(sid, "assistant", reply, elapsed_ms, sources, trace)
     if lead:
         db.save_lead(sid, lead)
-    return {"text": reply, "sources": sources, "elapsed_ms": elapsed_ms, "lead": lead}
+    return {"text": reply, "sources": sources, "elapsed_ms": elapsed_ms, "lead": lead, "trace": trace}
 
 
 @app.get("/api/sessions")

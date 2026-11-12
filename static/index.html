@@ -29,6 +29,7 @@
   .msg.system { align-self:center; color:var(--muted); font-size:13px; background:none; }
   .meta { display:none; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line); font-size:12px; color:var(--muted); white-space:normal; }
   body.debug .meta { display:block; }
+  .meta .step { padding-left:8px; }
   .lead { align-self:flex-start; border:1px solid var(--red); border-radius:12px; padding:10px 14px; background:var(--card); }
   .lead b { color:var(--red); }
   .input { display:flex; gap:8px; margin-top:10px; }
@@ -73,7 +74,7 @@ let sessionId = null;
 function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
-  if (text !== undefined && text !== null) e.textContent = text;
+  if (text !== undefined && text !== null) e.textContent = text;   // textContent: без риска XSS
   return e;
 }
 async function api(path, opts) {
@@ -84,14 +85,22 @@ async function api(path, opts) {
 const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
 const fmt = (iso) => new Date(iso).toLocaleString("ru-RU");
 
-function metaText(ms, sources) {
-  const t = ms != null ? `Время ответа: ${(ms / 1000).toFixed(2)} с` : "";
-  const s = sources && sources.length ? ` · Документы: ${sources.join(", ")}` : " · Документы: нет";
-  return t + s;
+function metaBlock(ms, sources, trace) {
+  const m = el("div", "meta");
+  m.appendChild(el("div", null, ms != null ? `Время ответа: ${(ms / 1000).toFixed(2)} с` : "Время ответа: —"));
+  if (trace && trace.length) {
+    m.appendChild(el("div", null, "Шаги:"));
+    trace.forEach((t) => {
+      const time = t.ms != null ? ` · ${t.ms} мс` : "";
+      m.appendChild(el("div", "step", `• ${t.step}${time}${t.note ? " — " + t.note : ""}`));
+    });
+  }
+  m.appendChild(el("div", null, sources && sources.length ? "Документы: " + sources.join(", ") : "Документы: нет"));
+  return m;
 }
-function bubble(parent, role, text, ms, sources) {
+function bubble(parent, role, text, ms, sources, trace) {
   const b = el("div", "msg " + role, text);
-  if (role === "assistant") b.appendChild(el("div", "meta", metaText(ms, sources)));
+  if (role === "assistant") b.appendChild(metaBlock(ms, sources, trace));
   parent.appendChild(b);
   parent.scrollTop = parent.scrollHeight;
   return b;
@@ -107,9 +116,10 @@ function leadCard(parent, lead) {
 }
 function renderMessages(parent, msgs) {
   parent.replaceChildren();
-  msgs.forEach((m) => bubble(parent, m.role, m.content, m.elapsed_ms, m.sources));
+  msgs.forEach((m) => bubble(parent, m.role, m.content, m.elapsed_ms, m.sources, m.trace));
 }
 
+// ---------- чат ----------
 async function startDialog() {
   sessionId = (await post("/api/session")).session_id;
   localStorage.setItem("sessionId", sessionId);
@@ -138,7 +148,7 @@ async function send() {
   try {
     const r = await post("/api/chat", { session_id: sessionId, message: text });
     wait.remove();
-    bubble($("log"), "assistant", r.text, r.elapsed_ms, r.sources);
+    bubble($("log"), "assistant", r.text, r.elapsed_ms, r.sources, r.trace);
     if (r.lead) leadCard($("log"), r.lead);
   } catch (e) {
     wait.remove();
@@ -152,6 +162,7 @@ $("msg").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftK
 $("newBtn").onclick = startDialog;
 $("debug").onchange = (e) => { document.body.classList.toggle("debug", e.target.checked); localStorage.setItem("debug", e.target.checked ? "1" : ""); };
 
+// ---------- история ----------
 async function loadHistory() {
   const box = $("sessions");
   const list = await api("/api/sessions");
@@ -175,6 +186,7 @@ async function loadHistory() {
   });
 }
 
+// ---------- заявки ----------
 async function loadLeads() {
   const box = $("leadList");
   const list = await api("/api/leads");
@@ -189,6 +201,7 @@ async function loadLeads() {
   });
 }
 
+// ---------- вкладки ----------
 document.querySelectorAll("nav button").forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll("nav button, .tab").forEach((x) => x.classList.remove("active"));

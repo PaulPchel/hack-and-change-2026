@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT NOT NULL,
     created_at TEXT NOT NULL,
     elapsed_ms INTEGER,
-    sources TEXT
+    sources TEXT,
+    trace TEXT
 );
 CREATE TABLE IF NOT EXISTS leads (
     session_id TEXT PRIMARY KEY REFERENCES sessions(id),
@@ -57,6 +58,9 @@ def init():
         os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
         conn = sqlite3.connect(DB_PATH)
         conn.executescript(SCHEMA)
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(messages)")]
+        if "trace" not in cols:  # база создана до появления трассировки
+            conn.execute("ALTER TABLE messages ADD COLUMN trace TEXT")
         conn.commit()
         conn.close()
 
@@ -71,23 +75,28 @@ def session_exists(sid):
     return bool(_run("SELECT 1 FROM sessions WHERE id = ?", (sid,), fetch=True))
 
 
-def add_message(sid, role, content, elapsed_ms=None, sources=None):
+def add_message(sid, role, content, elapsed_ms=None, sources=None, trace=None):
     _run(
-        "INSERT INTO messages (session_id, role, content, created_at, elapsed_ms, sources) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (sid, role, content, _now(), elapsed_ms, json.dumps(sources or [], ensure_ascii=False)),
+        "INSERT INTO messages (session_id, role, content, created_at, elapsed_ms, sources, trace) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            sid, role, content, _now(), elapsed_ms,
+            json.dumps(sources or [], ensure_ascii=False),
+            json.dumps(trace or [], ensure_ascii=False),
+        ),
     )
 
 
 def get_messages(sid):
     rows = _run(
-        "SELECT role, content, created_at, elapsed_ms, sources FROM messages "
+        "SELECT role, content, created_at, elapsed_ms, sources, trace FROM messages "
         "WHERE session_id = ? ORDER BY id",
         (sid,),
         fetch=True,
     )
     for r in rows:
         r["sources"] = json.loads(r["sources"] or "[]")
+        r["trace"] = json.loads(r["trace"] or "[]")
     return rows
 
 
