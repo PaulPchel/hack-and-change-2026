@@ -224,3 +224,6 @@ data/
 knowledge-base.zip
 questions.csv
 submission.csv
+storage/
+*.db
+.DS_Store

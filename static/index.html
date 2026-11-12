@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>МТС Energytool: ИИ-консультант</title>
+<style>
+  :root { --red:#e30611; --bg:#f4f5f7; --card:#fff; --text:#1d2023; --muted:#6b7280; --line:#e2e4e8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16181b; --card:#212428; --text:#eceef0; --muted:#9aa1ab; --line:#33373d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;
+           padding:12px 20px; background:var(--card); border-bottom:1px solid var(--line); }
+  h1 { font-size:17px; margin:0; } h1 span { color:var(--red); }
+  nav button { border:0; background:none; padding:8px 14px; font:inherit; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; }
+  nav button.active { color:var(--text); border-color:var(--red); }
+  main { max-width:820px; margin:0 auto; padding:16px; }
+  .tab { display:none; } .tab.active { display:block; }
+  .bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:10px; flex-wrap:wrap; }
+  button.primary { background:var(--red); color:#fff; border:0; border-radius:8px; padding:9px 16px; font:inherit; cursor:pointer; }
+  button.ghost { background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 14px; font:inherit; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  #log { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; height:60vh; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
+  .msg { max-width:85%; padding:9px 13px; border-radius:12px; white-space:pre-wrap; word-wrap:break-word; }
+  .msg.user { align-self:flex-end; background:var(--red); color:#fff; border-bottom-right-radius:3px; }
+  .msg.assistant { align-self:flex-start; background:var(--bg); border-bottom-left-radius:3px; }
+  .msg.system { align-self:center; color:var(--muted); font-size:13px; background:none; }
+  .meta { display:none; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line); font-size:12px; color:var(--muted); white-space:normal; }
+  body.debug .meta { display:block; }
+  .lead { align-self:flex-start; border:1px solid var(--red); border-radius:12px; padding:10px 14px; background:var(--card); }
+  .lead b { color:var(--red); }
+  .input { display:flex; gap:8px; margin-top:10px; }
+  textarea { flex:1; resize:none; font:inherit; padding:9px 12px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--text); }
+  .row { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:8px; }
+  .row.click { cursor:pointer; } .row.click:hover { border-color:var(--red); }
+  .row small { color:var(--muted); } .tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:10px; background:var(--bg); margin-left:6px; }
+  .tag.lead-yes { background:var(--red); color:#fff; }
+  .empty { color:var(--muted); padding:20px; text-align:center; }
+  #sessionView { margin-top:14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>МТС</span> Energytool · ИИ-консультант</h1>
+  <nav>
+    <button data-tab="chat" class="active">Чат</button>
+    <button data-tab="history">История</button>
+    <button data-tab="leads">Заявки</button>
+  </nav>
+</header>
+<main>
+  <section id="chat" class="tab active">
+    <div class="bar">
+      <button class="ghost" id="newBtn">Новый диалог</button>
+      <label><input type="checkbox" id="debug"> Режим отладки</label>
+    </div>
+    <div id="log"></div>
+    <div class="input">
+      <textarea id="msg" rows="2" maxlength="2000" placeholder="Опишите задачу своими словами… (Enter — отправить)"></textarea>
+      <button class="primary" id="sendBtn">Отправить</button>
+    </div>
+  </section>
+  <section id="history" class="tab"><div id="sessions"></div><div id="sessionView"></div></section>
+  <section id="leads" class="tab"><div id="leadList"></div></section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let sessionId = null;
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = text;
+  return e;
+}
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error((await r.text()) || r.status);
+  return r.json();
+}
+const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+const fmt = (iso) => new Date(iso).toLocaleString("ru-RU");
+
+function metaText(ms, sources) {
+  const t = ms != null ? `Время ответа: ${(ms / 1000).toFixed(2)} с` : "";
+  const s = sources && sources.length ? ` · Документы: ${sources.join(", ")}` : " · Документы: нет";
+  return t + s;
+}
+function bubble(parent, role, text, ms, sources) {
+  const b = el("div", "msg " + role, text);
+  if (role === "assistant") b.appendChild(el("div", "meta", metaText(ms, sources)));
+  parent.appendChild(b);
+  parent.scrollTop = parent.scrollHeight;
+  return b;
+}
+function leadCard(parent, lead) {
+  const c = el("div", "lead");
+  c.appendChild(el("b", null, "Заявка менеджеру сформирована"));
+  [["ФИО", lead.name], ["Телефон", lead.phone], ["Компания", lead.company], ["Резюме", lead.summary]].forEach(([k, v]) => {
+    c.appendChild(el("div", null, `${k}: ${v || "—"}`));
+  });
+  parent.appendChild(c);
+  parent.scrollTop = parent.scrollHeight;
+}
+function renderMessages(parent, msgs) {
+  parent.replaceChildren();
+  msgs.forEach((m) => bubble(parent, m.role, m.content, m.elapsed_ms, m.sources));
+}
+
+async function startDialog() {
+  sessionId = (await post("/api/session")).session_id;
+  localStorage.setItem("sessionId", sessionId);
+  $("log").replaceChildren();
+  bubble($("log"), "system", "Новый диалог. Опишите вашу задачу: например, как снизить счета за электроэнергию.");
+}
+async function restoreDialog() {
+  const saved = localStorage.getItem("sessionId");
+  if (saved) {
+    try {
+      const msgs = await api("/api/sessions/" + saved);
+      sessionId = saved;
+      if (msgs.length) return renderMessages($("log"), msgs);
+      return bubble($("log"), "system", "Опишите вашу задачу.");
+    } catch (e) { /* сессии нет — создадим новую */ }
+  }
+  await startDialog();
+}
+async function send() {
+  const text = $("msg").value.trim();
+  if (!text || $("sendBtn").disabled) return;
+  $("msg").value = "";
+  $("sendBtn").disabled = true;
+  bubble($("log"), "user", text);
+  const wait = bubble($("log"), "system", "Консультант печатает…");
+  try {
+    const r = await post("/api/chat", { session_id: sessionId, message: text });
+    wait.remove();
+    bubble($("log"), "assistant", r.text, r.elapsed_ms, r.sources);
+    if (r.lead) leadCard($("log"), r.lead);
+  } catch (e) {
+    wait.remove();
+    bubble($("log"), "system", "Ошибка связи с сервером. Попробуйте ещё раз.");
+  }
+  $("sendBtn").disabled = false;
+  $("msg").focus();
+}
+$("sendBtn").onclick = send;
+$("msg").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+$("newBtn").onclick = startDialog;
+$("debug").onchange = (e) => { document.body.classList.toggle("debug", e.target.checked); localStorage.setItem("debug", e.target.checked ? "1" : ""); };
+
+async function loadHistory() {
+  const box = $("sessions");
+  const list = await api("/api/sessions");
+  box.replaceChildren();
+  $("sessionView").replaceChildren();
+  if (!list.length) return box.appendChild(el("div", "empty", "Диалогов пока нет"));
+  list.forEach((s) => {
+    const r = el("div", "row click");
+    const title = el("div", null, s.first_message ? s.first_message.slice(0, 90) : "(без сообщений)");
+    if (s.has_lead) title.appendChild(el("span", "tag lead-yes", "есть заявка"));
+    r.appendChild(title);
+    r.appendChild(el("small", null, `${fmt(s.created_at)} · сообщений: ${s.messages}`));
+    r.onclick = async () => {
+      const view = $("sessionView");
+      view.replaceChildren();
+      const log = el("div"); log.id = "log"; log.style.height = "auto"; log.style.maxHeight = "50vh";
+      view.appendChild(log);
+      renderMessages(log, await api("/api/sessions/" + s.id));
+    };
+    box.appendChild(r);
+  });
+}
+
+async function loadLeads() {
+  const box = $("leadList");
+  const list = await api("/api/leads");
+  box.replaceChildren();
+  if (!list.length) return box.appendChild(el("div", "empty", "Заявок пока нет"));
+  list.forEach((l) => {
+    const r = el("div", "row");
+    r.appendChild(el("div", null, `${l.name || "—"} · ${l.phone || "—"} · ${l.company || "—"}`));
+    r.appendChild(el("div", null, "Резюме: " + (l.summary || "—")));
+    r.appendChild(el("small", null, fmt(l.created_at) + " · диалог " + l.session_id));
+    box.appendChild(r);
+  });
+}
+
+document.querySelectorAll("nav button").forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll("nav button, .tab").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    $(b.dataset.tab).classList.add("active");
+    if (b.dataset.tab === "history") loadHistory();
+    if (b.dataset.tab === "leads") loadLeads();
+  };
+});
+
+if (localStorage.getItem("debug")) { $("debug").checked = true; document.body.classList.add("debug"); }
+restoreDialog();
+</script>
+</body>
+</html>
