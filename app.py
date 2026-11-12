@@ -89,7 +89,6 @@ def chat(req: ChatRequest):
     if not db.session_exists(sid):
         raise HTTPException(404, "Диалог не найден")
 
-    # Контекст — только сообщения этой сессии
     history = [{"role": m["role"], "content": m["content"]} for m in db.get_messages(sid)]
     history.append({"role": "user", "content": text})
     db.add_message(sid, "user", text)

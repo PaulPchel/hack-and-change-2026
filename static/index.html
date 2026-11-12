@@ -74,7 +74,7 @@ let sessionId = null;
 function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
-  if (text !== undefined && text !== null) e.textContent = text;   // textContent: без риска XSS
+  if (text !== undefined && text !== null) e.textContent = text;   
   return e;
 }
 async function api(path, opts) {
@@ -119,7 +119,6 @@ function renderMessages(parent, msgs) {
   msgs.forEach((m) => bubble(parent, m.role, m.content, m.elapsed_ms, m.sources, m.trace));
 }
 
-// ---------- чат ----------
 async function startDialog() {
   sessionId = (await post("/api/session")).session_id;
   localStorage.setItem("sessionId", sessionId);
@@ -162,7 +161,7 @@ $("msg").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftK
 $("newBtn").onclick = startDialog;
 $("debug").onchange = (e) => { document.body.classList.toggle("debug", e.target.checked); localStorage.setItem("debug", e.target.checked ? "1" : ""); };
 
-// ---------- история ----------
+
 async function loadHistory() {
   const box = $("sessions");
   const list = await api("/api/sessions");
@@ -186,7 +185,6 @@ async function loadHistory() {
   });
 }
 
-// ---------- заявки ----------
 async function loadLeads() {
   const box = $("leadList");
   const list = await api("/api/leads");
@@ -201,7 +199,6 @@ async function loadLeads() {
   });
 }
 
-// ---------- вкладки ----------
 document.querySelectorAll("nav button").forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll("nav button, .tab").forEach((x) => x.classList.remove("active"));

@@ -59,7 +59,7 @@ def init():
         conn = sqlite3.connect(DB_PATH)
         conn.executescript(SCHEMA)
         cols = [r[1] for r in conn.execute("PRAGMA table_info(messages)")]
-        if "trace" not in cols:  # база создана до появления трассировки
+        if "trace" not in cols:
             conn.execute("ALTER TABLE messages ADD COLUMN trace TEXT")
         conn.commit()
         conn.close()
