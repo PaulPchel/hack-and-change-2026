@@ -17,7 +17,7 @@
    ```
 4. Откройте http://localhost:8000
 
-Без ключа чат всё равно запустится, но ответит заготовкой (режим заглушки).
+Без ключа можно проверить сбор заявки, отправив «Перезвоните мне». Для ответов по базе нужны настройки модели. Для режима заглушки задайте `USE_STUB=1`.
 
 ## Как проверить основной сценарий
 
@@ -32,7 +32,7 @@
 ```
 Браузер (static/index.html)
    │  /api/chat, /api/session, /api/sessions, /api/leads
-FastAPI (app.py) ──► consultant.answer(history)  ──► retrieval.search(query) ──► база знаний
+FastAPI (app.py) ──► consultant.answer(history)  ──► solution.Retriever ──► база знаний
    │                        └── LLM по API организаторов
 SQLite (db.py): сессии, сообщения, заявки → storage/app.db
 ```
@@ -40,7 +40,7 @@ SQLite (db.py): сессии, сообщения, заявки → storage/app.d
 - `app.py` принимает сообщения, вызывает консультанта, замеряет время, сохраняет всё в базу.
 - `consultant.answer(history)` возвращает `{"text", "sources", "lead", "trace"}`: ответ, имена файлов базы, заявку (или `None`) и необязательный список шагов `[{"step", "ms", "note"}]` для режима отладки. Собирать шаги помогает `tracing.py`.
 - `solution.py` — отдельная точка входа для автоматической проверки (читает вопросы, пишет `submission.csv`).
-- `stub_consultant.py` работает, пока нет `consultant.py`.
+- `stub_consultant.py` можно включить через `USE_STUB=1`.
 
 ## Переменные окружения
 
@@ -61,11 +61,23 @@ SQLite (db.py): сессии, сообщения, заявки → storage/app.d
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+set -a
+source .env
+set +a
 uvicorn app:app --port 8000
 ```
+
+## Проверка консультанта
+
+```bash
+python -m unittest -v
+python evaluate_consultant.py --reference data/demo_output.csv
+```
+
+Для второго запуска задайте `LLM_BASE_URL`, `LLM_API_KEY` и при необходимости `DATA_DIR` в окружении. Если примеров ответов нет, запустите команду без `--reference`. Скрипт прогоняет вопросы из `questions.csv` и пять ловушек, сохраняет ответы и метрики стиля в `consultant_evaluation.csv`. Точность фактов и соблюдение ограничений в ответах модели проверяются по CSV вручную.
 
 ## Известные ограничения
 
 - Заявки не уходят в CRM и на почту: они хранятся в базе и видны на вкладке «Заявки» (так и требует кейс).
-- Один диалог — одна заявка: повторная заявка в том же диалоге заменяет предыдущую.
+- Для повторной заявки начните новый диалог.
 - Используйте только тестовые персональные данные.
