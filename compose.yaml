@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATA_DIR: /app/data
+      DB_PATH: /app/storage/app.db
+    volumes:
+      - ./data:/app/data:ro       
+      - ./storage:/app/storage     
+    restart: unless-stopped
