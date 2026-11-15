@@ -17,7 +17,7 @@ from pathlib import Path
 import httpx
 import numpy as np
 from rank_bm25 import BM25Okapi
-
+import re
 
 # ---------- настройки из окружения ----------
 def env(name, default=""):
@@ -238,9 +238,11 @@ def find_file(*names):
 def main():
     q_path = find_file("questions.csv", "train.csv")
     kb_path = find_file("knowledge-base.zip", "knowledge_base.zip", "kb.zip")
-    with open(q_path, encoding="utf-8", newline="") as f:
-        rows = list(csv.DictReader(f))
-
+    with open(q_path, encoding="utf-8-sig", newline="") as f:
+        first_line = f.readline()
+        f.seek(0)
+        delim = '\t' if '\t' in first_line else ','
+        rows = list(csv.DictReader(f, delimiter=delim))
     chunks = []
     for name, text in load_kb(kb_path):
         chunks.extend(chunk_doc(name, text))
