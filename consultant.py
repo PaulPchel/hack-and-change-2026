@@ -2,11 +2,11 @@
 
 import json
 import re
-from threading import Lock
 from zipfile import BadZipFile
 
 import httpx
 
+import retrieval
 import solution
 from tracing import Trace
 
@@ -57,25 +57,11 @@ PHONE = re.compile(r"(?<!\d)(?:\+7|8)[ ()-]*\d{3}[ ()-]*\d{3}[ -]*\d{2}[ -]*\d{2
 NAME = re.compile(r"[А-Яа-яЁёA-Za-z]+(?:[-'’][А-Яа-яЁёA-Za-z]+)*(?:\s+[А-Яа-яЁёA-Za-z]+(?:[-'’][А-Яа-яЁёA-Za-z]+)*){1,2}")
 LABEL = re.compile(r"(?:^|[\n;,])\s*(фио|телефон|компания)\s*[:=]\s*", re.I)
 LABEL_KEYS = {"фио": "name", "телефон": "phone", "компания": "company"}
-_index_lock = Lock()
 _client = httpx.Client()
-_retriever = None
 
 
 def _search(query):
-    global _retriever
-    with _index_lock:
-        if _retriever is None:
-            path = solution.find_file("knowledge-base.zip", "knowledge_base.zip", "kb.zip")
-            chunks = [chunk for name, text in solution.load_kb(path) for chunk in solution.chunk_doc(name, text)]
-            if not chunks:
-                return []
-            _retriever = solution.Retriever(_client, chunks)
-    found = _retriever.search(query)
-    if _retriever.emb is None:
-        query_terms = set(solution.toks(query))
-        found = [(name, text) for name, text in found if query_terms.intersection(solution.toks(text))]
-    return found
+    return retrieval.search(query)
 
 
 def _collect(fields, text, expected):
