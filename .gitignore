@@ -219,6 +219,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Проект: данные кейса, секреты и сгенерированные файлы в git не кладём
 .env
 data/
 knowledge-base.zip
@@ -233,6 +234,8 @@ storage.zip
 storage/
 *.db
 .DS_Store
-storage/
-*.db
-.DS_Store
+submit.zip
+submit_build/
+/ground_truth.csv
+*.pyc
+__pycache__/
