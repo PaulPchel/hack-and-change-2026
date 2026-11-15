@@ -19,7 +19,6 @@ import numpy as np
 from rank_bm25 import BM25Okapi
 
 
-# ---------- настройки из окружения ----------
 def env(name, default=""):
     v = os.getenv(name, "").strip()
     return default if not v or v == name else v
@@ -68,7 +67,6 @@ SYSTEM_PROMPT = """Ты — консультант сайта МТС Energytool 
 Отвечай на русском языке."""
 
 
-# ---------- загрузка и разбиение базы ----------
 def load_kb(path):
     docs = []
     with zipfile.ZipFile(path) as z:
@@ -118,14 +116,14 @@ def tokenize(text):
 
 
 def stem(w):
-    return w[:6]  # грубый «стемминг» для русского: достаточно для первой версии
+    return w[:6]
 
 
 def toks(text):
     return [stem(w) for w in tokenize(text) if len(w) > 2]
 
 
-# ---------- обращения к API ----------
+
 def post(client, path, payload, retries=3):
     for i in range(retries):
         try:
@@ -161,7 +159,7 @@ class Retriever:
         self.client = client
         self.chunks = chunks
         self.bm25 = BM25Okapi([toks(c[1]) for c in chunks])
-        self.emb = embed(client, [c[1] for c in chunks])  # None, если эмбеддинги недоступны
+        self.emb = embed(client, [c[1] for c in chunks])
 
     def search(self, query, k=TOP_K):
         n = len(self.chunks)
@@ -182,7 +180,6 @@ class Retriever:
         return [self.chunks[i] for i in top if scores[i] > 0]
 
 
-# ---------- диалог и ответ ----------
 def split_dialog(question):
     """Вопрос может быть историей «Пользователь: ... Ассистент: ...». Возвращает messages."""
     if "Пользователь:" not in question:
@@ -254,7 +251,7 @@ def main():
         def work(row):
             try:
                 return row["id"], answer(client, retriever, row["question"])
-            except Exception as e:  # один сбойный вопрос не должен ронять весь запуск
+            except Exception as e:
                 print("error", row["id"], e, file=sys.stderr)
                 return row["id"], FALLBACK
 
