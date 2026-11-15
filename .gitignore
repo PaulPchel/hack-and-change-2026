@@ -224,3 +224,15 @@ data/
 knowledge-base.zip
 questions.csv
 submission.csv
+consultant_evaluation.csv
+.venv.zip
+data.zip
+static.zip
+storage.zip
+*.env
+storage/
+*.db
+.DS_Store
+storage/
+*.db
+.DS_Store
